@@ -1,0 +1,26 @@
+<svg width="480" height="270" viewBox="0 0 480 270" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 极简背景 -->
+  <rect width="480" height="270" fill="#F0F4F8"/>
+  <circle cx="240" cy="135" r="100" fill="#E2E8F0" opacity="0.6"/>
+
+  <!-- 居中卡片 -->
+  <rect x="140" y="30" width="200" height="210" rx="16" fill="#FFFFFF" filter="drop-shadow(0 10px 25px rgba(0,0,0,0.08))"/>
+  
+  <!-- Logo 顶部居中 -->
+  <circle cx="240" cy="58" r="16" fill="#3B82F6"/>
+  <rect x="233" y="51" width="14" height="14" rx="3" fill="#FFFFFF"/>
+  
+  <!-- 标题 -->
+  <rect x="200" y="85" width="80" height="9" rx="3" fill="#0F172A"/>
+  <rect x="180" y="99" width="120" height="6" rx="2" fill="#94A3B8"/>
+  
+  <!-- 表单项 -->
+  <rect x="165" y="118" width="150" height="22" rx="6" fill="#F8FAFC" stroke="#E2E8F0"/>
+  <rect x="165" y="148" width="150" height="22" rx="6" fill="#F8FAFC" stroke="#E2E8F0"/>
+  
+  <!-- 登录按钮 -->
+  <rect x="165" y="180" width="150" height="26" rx="6" fill="#0F172A"/>
+  <rect x="225" y="189" width="30" height="8" rx="2" fill="#FFFFFF"/>
+  
+  <rect x="205" y="218" width="70" height="5" rx="2" fill="#CBD5E1"/>
+</svg>

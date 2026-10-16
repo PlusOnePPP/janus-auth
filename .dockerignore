@@ -1,0 +1,12 @@
+# 减小 docker build 上下文体积（前端 node_modules 很大，但打包在宿主机完成，
+# 镜像里只需要后端打好的 jar）
+**/node_modules
+.pnpm-store
+janus-frontend/node_modules
+.git
+.idea
+.trae
+**/target/classes
+**/target/test-classes
+**/*.class
+*.log

@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<title>Janus SSO 接入演示</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: #f5f7fa; color: #24292f; padding: 28px 16px 48px; }
+  .wrap { max-width: 860px; margin: 0 auto; }
+
+  /* ===== 头部：标题 + 登录态 + 当前用户 ===== */
+  header { background: #fff; border: 1px solid #d0d7de; border-radius: 10px;
+           padding: 18px 22px; margin-bottom: 22px; }
+  .head-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin-right: auto; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 12px; }
+  .tag.ok { background: #dafbe1; color: #1a7f37; }
+  .tag.bad { background: #ffebe9; color: #cf222e; }
+  .sub { color: #656d76; font-size: 13px; margin-top: 6px; }
+  #profile { margin-top: 14px; border-top: 1px dashed #d8dee4; padding-top: 14px; }
+  #profile .none { color: #656d76; font-size: 13px; }
+  .kv { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 13.5px; }
+  .kv .item { display: flex; gap: 6px; align-items: baseline; }
+  .kv .k { color: #656d76; font-size: 12.5px; }
+  .chip { display: inline-block; padding: 1px 8px; margin: 1px 2px 1px 0;
+          border-radius: 10px; background: #ddf4ff; color: #0969da; font-size: 12px; }
+  .chip.gray { background: #f6f8fa; color: #57606a; }
+
+  /* ===== 步骤分区 ===== */
+  .step { background: #fff; border: 1px solid #d0d7de; border-radius: 10px;
+          margin-bottom: 18px; overflow: hidden; }
+  .step-head { display: flex; align-items: center; gap: 12px;
+               padding: 14px 22px; border-bottom: 1px solid #eaeef2; }
+  .step-head .no { width: 26px; height: 26px; border-radius: 50%; background: #0969da;
+                   color: #fff; font-size: 14px; display: flex; align-items: center;
+                   justify-content: center; flex-shrink: 0; }
+  .step-head h2 { font-size: 15.5px; }
+  .step-head .hint { margin-left: auto; color: #656d76; font-size: 12.5px; }
+  .step-body { padding: 16px 22px 20px; }
+
+  .btn { display: inline-block; padding: 7px 14px; border: none; border-radius: 6px;
+         font-size: 13.5px; cursor: pointer; color: #fff; text-decoration: none;
+         background: #0969da; }
+  .btn.gray { background: #6e7781; }
+  .btn + .btn { margin-left: 8px; }
+  pre { background: #f6f8fa; border: 1px solid #e4e8ec; border-radius: 6px;
+        padding: 10px 12px; font-size: 12px; line-height: 1.55; overflow: auto;
+        white-space: pre-wrap; word-break: break-all; margin: 10px 0; }
+  .lead { font-size: 13.5px; color: #57606a; margin-bottom: 10px; }
+
+  /* ===== Tab（Step 2 内部：用户 / 机构 / 角色） ===== */
+  .tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 2px solid #eaeef2; }
+  .tab { padding: 7px 18px; font-size: 13.5px; cursor: pointer; color: #57606a;
+         border-radius: 6px 6px 0 0; margin-bottom: -2px; border-bottom: 2px solid transparent; }
+  .tab.active { color: #0969da; font-weight: 600; border-bottom-color: #0969da; background: #f3f8fe; }
+  .pane { display: none; }
+  .pane.active { display: block; }
+
+  /* ===== 演示条目统一结构 ===== */
+  .demo { margin-bottom: 18px; }
+  .demo:last-child { margin-bottom: 0; }
+  .demo .t { font-size: 13.5px; font-weight: 600; margin-bottom: 2px; }
+  .demo .t code { background: #f6f8fa; border: 1px solid #e4e8ec; border-radius: 4px;
+                  padding: 1px 6px; font-size: 12px; color: #0969da; font-weight: normal; }
+  .demo .d { font-size: 12.5px; color: #656d76; margin-bottom: 6px; }
+  .op { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+  .op input { padding: 6px 10px; border: 1px solid #d0d7de; border-radius: 6px;
+              font-size: 13px; width: 220px; }
+  .result { border-left: 3px solid #0969da; background: #f6f8fa; padding: 8px 12px;
+            font-size: 12.5px; margin-top: 8px; border-radius: 0 6px 6px 0; min-height: 20px; }
+  .result .meta { color: #656d76; margin-bottom: 4px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin-top: 4px; }
+  th, td { text-align: left; padding: 4px 10px; border-bottom: 1px solid #eaeef2; }
+  th { color: #57606a; font-weight: 600; background: #fbfcfd; }
+
+  /* ===== Step 3 机制说明 ===== */
+  .flow { display: flex; align-items: stretch; gap: 0; margin: 12px 0 14px; flex-wrap: wrap; }
+  .flow .node { flex: 1; min-width: 150px; background: #f6f8fa; border: 1px solid #e4e8ec;
+                border-radius: 8px; padding: 10px 12px; font-size: 12.5px; }
+  .flow .node b { display: block; font-size: 13px; margin-bottom: 4px; }
+  .flow .arrow { display: flex; align-items: center; padding: 0 8px; color: #0969da;
+                 font-size: 16px; font-weight: 700; }
+
+  footer { text-align: center; color: #656d76; font-size: 12.5px; margin-top: 26px; }
+  footer a { color: #0969da; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===== 头部：登录态 + 当前用户 ===== -->
+  <header>
+    <div class="head-row">
+      <h1>Janus SSO 接入演示</h1>
+      <span id="loginState" class="tag">检测中…</span>
+      <a id="loginBtn" class="btn" href="/sso/login?back=/">登录</a>
+      <button class="btn gray" onclick="logout()">全端注销</button>
+      <button class="btn gray" onclick="logoutByAlone()">仅退本应用</button>
+    </div>
+    <p class="sub">业务系统对接 janus-client-starter 的效果演示：登录鉴权零代码，查数据只用一个 <b>JanusClient</b>，缓存与刷新全自动。</p>
+    <div id="profile"><span class="none">未登录。点「登录」跳认证中心，登录后自动回填。</span></div>
+  </header>
+
+  <!-- ===== Step 1：登录 / 注销 ===== -->
+  <div class="step">
+    <div class="step-head">
+      <span class="no">1</span><h2>单点登录 / 注销</h2>
+      <span class="hint">starter 内置路由，业务不写任何 Controller</span>
+    </div>
+    <div class="step-body">
+      <p class="lead">登录跳认证中心验票后回本系统；「全端注销」= 本系统 + 认证中心 + 其他已登录系统一起下线；「仅退本应用」只删本地会话。</p>
+      <pre>&lt;a href="/sso/login?back=/回跳地址"&gt;登录&lt;/a&gt;       // 跳认证中心，验票后建本地会话并回跳
+&lt;a href="/sso/logout?back=/"&gt;全端注销&lt;/a&gt;      // 本系统 + 认证中心 + 其他系统全部下线
+&lt;a href="/sso/logoutByAlone?back=/"&gt;仅退本应用&lt;/a&gt;  // 只删本地会话，中央会话保留</pre>
+    </div>
+  </div>
+
+  <!-- ===== Step 2：JanusClient 查数据 ===== -->
+  <div class="step">
+    <div class="step-head">
+      <span class="no">2</span><h2>查数据：注入 JanusClient，一个接口拿用户 / 机构 / 角色</h2>
+      <span class="hint">数据全部来自本地缓存，未命中自动回源认证中心</span>
+    </div>
+    <div class="step-body">
+      <div class="tabs">
+        <div class="tab active" data-tab="user"  onclick="switchTab('user')">用户</div>
+        <div class="tab" data-tab="org"  onclick="switchTab('org')">机构</div>
+        <div class="tab" data-tab="role" onclick="switchTab('role')">角色</div>
+      </div>
+
+      <!-- 用户 -->
+      <div class="pane active" id="pane-user">
+        <div class="demo">
+          <div class="t">按 ID 批量查用户 <code>getUsersByIds(ids)</code></div>
+          <div class="d">缓存命中毫秒级返回；未命中自动带签名回源。连点两次「调用」对比耗时，即可看到缓存效果。</div>
+          <pre>// 后端：注入 starter 的 JanusClient
+Map&lt;String, UserInfoVO&gt; users = janusClient.getUsersByIds(List.of("1", "2", "3"));</pre>
+          <div class="op">
+            <button class="btn" onclick="callUsers()">调用 /api/demo/users?ids=1,2,3</button>
+          </div>
+          <div class="result" id="usersResult">尚未调用。建议连点两次对比耗时。</div>
+        </div>
+        <div class="demo">
+          <div class="t">按关键字搜用户 <code>searchUsers(keyword)</code></div>
+          <div class="d">登录名 / 姓名模糊匹配（忽略大小写）。首次搜索自动拉全量入缓存，之后全程本地过滤。</div>
+          <pre>List&lt;UserInfoVO&gt; users = janusClient.searchUsers("ali");</pre>
+          <div class="op">
+            <input id="searchKeyword" placeholder="登录名/姓名关键字（可空）">
+            <button class="btn" onclick="callSearch()">调用 /api/demo/users/search</button>
+          </div>
+          <div class="result" id="searchResult">尚未调用。</div>
+        </div>
+      </div>
+
+      <!-- 机构 -->
+      <div class="pane" id="pane-org">
+        <div class="demo">
+          <div class="t">机构查询与搜索 <code>getOrgById(id) / getOrgChildren(pid) / searchOrgs(kw)</code></div>
+          <div class="d">本地 LRU 缓存按需回源；认证中心机构变更后钩子通知自动淘汰对应节点。</div>
+          <pre>List&lt;DeptInfoVO&gt; orgs = janusClient.searchOrgs("研发");   // 名称模糊搜索
+DeptInfoVO org = janusClient.getOrgById("1");            // 按 ID
+List&lt;DeptInfoVO&gt; children = janusClient.getOrgChildren("1"); // 直接子机构</pre>
+          <div class="op">
+            <input id="orgKeyword" placeholder="机构名称关键字（可空）">
+            <button class="btn" onclick="callOrgs()">调用 /api/demo/orgs</button>
+          </div>
+          <div class="result" id="orgsResult">尚未调用。</div>
+        </div>
+      </div>
+
+      <!-- 角色 -->
+      <div class="pane" id="pane-role">
+        <div class="demo">
+          <div class="t">角色查询 <code>listRoles() / getRoleById(id) / getRoleByKey(key) / searchRoles(kw)</code></div>
+          <div class="d">首次访问自动拉全量（roles-all）；认证中心角色变更后钩子通知自动重拉。</div>
+          <pre>List&lt;RoleInfoVO&gt; roles = janusClient.listRoles();
+RoleInfoVO admin = janusClient.getRoleByKey("admin");   // 按角色编码</pre>
+          <div class="op">
+            <button class="btn" onclick="callRoles()">调用 /api/demo/roles</button>
+          </div>
+          <div class="result" id="rolesResult">尚未调用。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Step 3：当前用户与钩子机制 ===== -->
+  <div class="step">
+    <div class="step-head">
+      <span class="no">3</span><h2>业务代码里取当前用户 &amp; 数据变了怎么办</h2>
+      <span class="hint">前者一行代码，后者零代码</span>
+    </div>
+    <div class="step-body">
+
+      <div class="demo">
+        <div class="t">取当前登录用户 <code>UserContextHolder.require()</code></div>
+        <div class="d">拦截器鉴权后自动注入上下文，任意 Controller 一行拿到 uid / 姓名 / 机构 / 角色 / 权限码（页面头部即它的可视化）。</div>
+        <pre>@GetMapping("/me")
+public UserContext me() { return UserContextHolder.require(); }</pre>
+        <div class="op">
+          <button class="btn" onclick="callWhoami()">调用 /api/demo/whoami</button>
+        </div>
+        <div class="result" id="whoamiResult">尚未调用。</div>
+      </div>
+
+      <div class="demo">
+        <div class="t">缓存自动刷新（钩子通知，业务零代码）</div>
+        <div class="d">认证中心改了数据不用管——starter 收到签名通知后自动回源刷新缓存，业务代码永远读到的都是新数据。</div>
+        <div class="flow">
+          <div class="node"><b>认证中心改数据</b>管理员改用户 / 机构 / 角色</div>
+          <div class="arrow">→</div>
+          <div class="node"><b>签名通知推送</b>HMAC-SHA256 防伪造防重放</div>
+          <div class="arrow">→</div>
+          <div class="node"><b>starter 自动刷新</b>验签后立即回源回填缓存</div>
+          <div class="arrow">→</div>
+          <div class="node"><b>业务无感知</b>下次读取即新数据</div>
+        </div>
+        <p class="d" style="margin-bottom:4px">想手动验证？点下方按钮手动踢掉 uid=1,2,3 的缓存，再回 Step 2 连点「批量查用户」看重新回源的耗时变化（钩子通知场景下这步是自动的）：</p>
+        <div class="op">
+          <button class="btn" onclick="callInvalidate()">调用 /api/demo/cache/invalidate</button>
+        </div>
+        <div class="result" id="invalidateResult">尚未调用。</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    客户端监控（注册状态 / 在线用户 / 缓存内容 / 通知记录）：<a href="/sso/janus/monitor.html" target="_blank">/sso/janus/monitor.html</a>
+    &nbsp;·&nbsp; 完整接入文档：<code>doc/业务单体接入指南.md</code>
+  </footer>
+</div>
+
+<script>
+  fetch('/api/demo/config').then(r => r.json()).then(cfg => {
+    document.getElementById('loginBtn').href = cfg.loginUrl;
+  });
+
+  fetch('/api/demo/whoami')
+    .then(r => { setState(r.ok); if (r.ok) loadProfile(); })
+    .catch(() => setState(false));
+
+  function setState(logged) {
+    const el = document.getElementById('loginState');
+    el.textContent = logged ? '已登录' : '未登录';
+    el.className = 'tag ' + (logged ? 'ok' : 'bad');
+  }
+  function chips(items, gray) {
+    if (!items || !items.length) return '<span class="chip gray">无</span>';
+    return items.map(i => `<span class="chip${gray ? ' gray' : ''}">${i}</span>`).join('');
+  }
+  /** 401 统一处理：未登录时引导跳登录 */
+  function handle401(el) {
+    setState(false);
+    el.innerHTML = '<span class="tag bad">401 未登录</span> → 2 秒后跳认证中心登录…';
+    setTimeout(() => location.href = '/sso/login?back=' + encodeURIComponent('/'), 2000);
+  }
+
+  /* ===== Tab 切换 ===== */
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + name));
+  }
+
+  /* ===== 头部当前用户 ===== */
+  async function loadProfile() {
+    const el = document.getElementById('profile');
+    try {
+      const resp = await fetch('/api/demo/whoami');
+      if (resp.status === 401) {
+        setState(false);
+        el.innerHTML = '<span class="none">未登录。点「登录」跳认证中心，登录后自动回填。</span>';
+        return;
+      }
+      const ctx = await resp.json();
+      setState(resp.ok);
+      const dept = ctx.deptName
+        ? `${ctx.deptName} <span class="chip gray">#${ctx.deptId}</span>`
+        : `<span class="chip gray">未分配（deptId=${ctx.deptId ?? '-'}）</span>`;
+      el.innerHTML = `<div class="kv">
+          <span class="item"><span class="k">用户</span><span>${ctx.realName || ctx.username}（${ctx.username}）</span></span>
+          <span class="item"><span class="k">UID</span><span>${ctx.uid}</span></span>
+          <span class="item"><span class="k">机构</span><span>${dept}</span></span>
+          <span class="item"><span class="k">角色</span><span>${chips(ctx.roles)}</span></span>
+          <span class="item"><span class="k">权限码</span><span>${chips(ctx.authCodes, true)}</span></span>
+        </div>`;
+    } catch (e) {
+      el.innerHTML = '<span class="none">加载失败: ' + e + '</span>';
+    }
+  }
+
+  /* ===== Step 2：用户 / 机构 / 角色 ===== */
+  async function callUsers() {
+    const el = document.getElementById('usersResult');
+    const t0 = performance.now();
+    try {
+      const resp = await fetch('/api/demo/users?ids=1,2,3');
+      if (resp.status === 401) { handle401(el); return; }
+      const users = await resp.json();
+      const ms = (performance.now() - t0).toFixed(1);
+      el.innerHTML = `<div class="meta">HTTP ${resp.status} · 耗时 ${ms} ms · ${Object.keys(users).length} 人` +
+        `（${ms < 20 ? '缓存命中' : '回源认证中心'}）</div>` +
+        `<table><tr><th>UID</th><th>用户</th><th>机构</th><th>角色</th></tr>` +
+        Object.values(users).map(u => u.exists
+          ? `<tr><td>${u.uid}</td><td>${u.username}（${u.realName || '-'}）</td><td>${u.deptName ?? '未分配'}</td><td>${(u.roles || []).join('、') || '无'}</td></tr>`
+          : `<tr><td>${u.uid}</td><td colspan="3">查无此人</td></tr>`).join('') + `</table>`;
+    } catch (e) { el.textContent = '请求失败: ' + e; }
+  }
+
+  async function callOrgs() {
+    const resp = await fetchRaw('/api/demo/orgs' + kwParams('orgKeyword'), document.getElementById('orgsResult'));
+    if (!resp) return;
+    const orgs = await resp.json();
+    document.getElementById('orgsResult').innerHTML =
+      `<div class="meta">HTTP ${resp.status} · ${orgs.length} 个机构（本地全量缓存过滤）</div>` +
+      `<table><tr><th>ID</th><th>机构名称</th><th>父机构</th><th>状态</th></tr>` +
+      orgs.slice(0, 30).map(o => `<tr><td>${o.deptId}</td><td>${o.deptName}</td><td>${o.parentId ?? '-'}</td><td>${o.status === 1 ? '正常' : '停用'}</td></tr>`).join('') + `</table>`;
+  }
+  async function callRoles() {
+    const el = document.getElementById('rolesResult');
+    const resp = await fetchRaw('/api/demo/roles', el);
+    if (!resp) return;
+    const roles = await resp.json();
+    el.innerHTML = `<div class="meta">HTTP ${resp.status} · ${roles.length} 个角色（本地全量缓存）</div>` +
+      `<table><tr><th>ID</th><th>角色名称</th><th>编码</th><th>状态</th></tr>` +
+      roles.map(r => `<tr><td>${r.roleId}</td><td>${r.roleName}</td><td>${r.roleKey}</td><td>${r.status === 1 ? '正常' : '停用'}</td></tr>`).join('') + `</table>`;
+  }
+
+  /* ===== Step 3 ===== */
+  async function callWhoami() {
+    const el = document.getElementById('whoamiResult');
+    const t0 = performance.now();
+    try {
+      const resp = await fetch('/api/demo/whoami');
+      if (resp.status === 401) { handle401(el); return; }
+      const ctx = await resp.json();
+      el.innerHTML = `<div class="meta">HTTP ${resp.status} · 耗时 ${(performance.now() - t0).toFixed(1)} ms</div>` +
+        `uid=${ctx.uid}，${ctx.username}（${ctx.realName || '-'}），机构：${ctx.deptName ?? '未分配'}，角色：${(ctx.roles || []).join('、') || '无'}`;
+    } catch (e) { el.textContent = '请求失败: ' + e; }
+  }
+
+  async function callInvalidate() {
+    const el = document.getElementById('invalidateResult');
+    try {
+      const resp = await fetch('/api/demo/cache/invalidate?ids=1,2,3', { method: 'POST' });
+      if (resp.status === 401) { handle401(el); return; }
+      const body = await resp.json();
+      el.innerHTML = `<div class="meta">HTTP ${resp.status}</div>已清除 ${body.removed} 条缓存。回 Step 2「批量查用户」连点两次，可见重新回源。`;
+    } catch (e) { el.textContent = '请求失败: ' + e; }
+  }
+
+  /* ===== 工具 ===== */
+  function kwParams(inputId) {
+    const kw = document.getElementById(inputId).value.trim();
+    return kw ? `?keyword=${encodeURIComponent(kw)}` : '';
+  }
+  /** 统一 fetch：401 引导登录；返回 null 表示已处理 */
+  async function fetchRaw(url, el) {
+    try {
+      const resp = await fetch(url);
+      if (resp.status === 401) { handle401(el); return null; }
+      return resp;
+    } catch (e) { el.textContent = '请求失败: ' + e; return null; }
+  }
+  /** 用户搜索结果渲染（表格） */
+  async function callSearch() {
+    const el = document.getElementById('searchResult');
+    const resp = await fetchRaw('/api/demo/users/search' + kwParams('searchKeyword'), el);
+    if (!resp) return;
+    const users = await resp.json();
+    el.innerHTML = `<div class="meta">HTTP ${resp.status} · 命中 ${users.length} 人（全量缓存本地过滤）</div>` +
+      `<table><tr><th>UID</th><th>登录名</th><th>姓名</th><th>机构</th></tr>` +
+      users.slice(0, 30).map(u => `<tr><td>${u.uid}</td><td>${u.username}</td><td>${u.realName || '-'}</td><td>${u.deptName ?? '未分配'}</td></tr>`).join('') + `</table>`;
+  }
+
+  function logout() {
+    // 全端注销：本系统 → 认证中心删中央会话 → 认证中心推送所有已登录系统下线
+    fetch('/api/demo/config').then(r => r.json()).then(cfg => location.href = cfg.logoutUrl);
+  }
+  function logoutByAlone() {
+    // 仅注销本应用本地会话，中央会话保留（其他系统与认证中心不受影响）
+    fetch('/api/demo/config').then(r => r.json()).then(cfg => location.href = cfg.logoutByAloneUrl);
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+{
+  "name": "@vben-core/composables",
+  "version": "5.7.0",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm exec tsdown"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "production": "./src/index.ts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.mjs"
+      }
+    }
+  },
+  "dependencies": {
+    "@vben-core/shared": "workspace:*",
+    "@vueuse/core": "catalog:",
+    "reka-ui": "catalog:",
+    "sortablejs": "catalog:",
+    "vue": "catalog:"
+  },
+  "devDependencies": {
+    "@types/sortablejs": "catalog:"
+  }
+}

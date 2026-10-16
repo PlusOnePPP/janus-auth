@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.janus</groupId>
+        <artifactId>janus-auth</artifactId>
+        <version>1.2.2</version>
+    </parent>
+
+    <artifactId>janus-demo</artifactId>
+    <name>janus-demo</name>
+    <description>Janus 统一认证接入演示单体（Sa-Token SSO 模式三客户端 / UserContext 注入 / 角色门禁 / 用户信息缓存）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.janus</groupId>
+            <artifactId>janus-client-spring-boot-starter</artifactId>
+            <version>1.2.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

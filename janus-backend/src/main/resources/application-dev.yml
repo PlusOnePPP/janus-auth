@@ -1,0 +1,58 @@
+# 开发环境配置（敏感信息用环境变量或 application-local.yml 注入，后者已 gitignore）
+
+spring:
+  datasource:
+    # 库表结构由 Flyway 启动时自动迁移（classpath:db/migration，见 application.yml spring.flyway），
+    # 全新环境只需先创建数据库 vben_admin，无需手工执行任何 SQL：
+    #   psql -U postgres -h localhost -c 'CREATE DATABASE vben_admin;'
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/vben_admin
+    username: ${DB_USERNAME:spec}
+    password: ${DB_PASSWORD:123456}
+    driver-class-name: org.postgresql.Driver
+
+  # Redis 缓存与会话存储（Sa-Token 模式二统一 Token 共享存储）
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:26379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:janus@123}
+      database: ${SPRING_DATA_REDIS_DATABASE:0}
+      timeout: 10s
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+mybatis-plus:
+  configuration:
+    # 不设 log-impl：MyBatis-Plus 自动探测 SLF4J，SQL 走 mapper logger 的 DEBUG（默认 INFO 不打印）；
+    # 若需临时排查 SQL，改用 org.apache.ibatis.logging.slf4j.Slf4jImpl 并对对应 mapper 包开 DEBUG，
+    # 切勿用 StdOutImpl（绕过 logback，无法通过 logging.level 控制）
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+
+logging:
+  level:
+    # 压掉 "Creating a new SqlSession / JDBC Connection will not be managed by Spring" 类框架 DEBUG 噪声
+    org.mybatis: warn
+    org.springframework.jdbc: warn
+    com.janus: info
+
+# 开发联调便利开关（生产 environment 切回 application.yml 的默认 false）
+janus:
+  # SSO-Server 侧：SsoProperties 绑定前缀是 janus.sso（与 application.yml 平级覆盖），
+  # 不能嵌在 janus.auth 下面，否则读不到、永远用 application.yml 的默认值
+  sso:
+    # 门户登录页：5666 的 Vite dev 是 history 路由（.env.development 未配置
+    # VITE_ROUTER_HISTORY），不能带 #；8080 单体 jar 的构建产物是 hash 路由，必须带 #
+    # （否则追加的 ?redirect= 落在 hash 外，vue-router 读不到，登录后无法回跳）。
+    # 生产用环境变量 JANUS_SSO_PORTAL_LOGIN_URL 覆盖
+    portal-login-url: 'http://localhost:5666/auth/login'
+  auth:
+    # 短信/邮箱走 mock：不真发，验证码打印到日志，省去真实网关依赖
+    sms-mock: true
+    email-mock: true
+    phone-auto-register: true
+    oauth-auto-register: true

@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>单点登录监控</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: #f5f7fa; color: #24292f; padding: 32px 16px; }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: #656d76; font-size: 14px; margin-bottom: 16px; }
+  /* 顶部概览卡片 */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .stat { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 14px 16px; }
+  .stat .label { font-size: 12.5px; color: #656d76; margin-bottom: 6px; }
+  .stat .value { font-size: 20px; font-weight: 600; line-height: 1.2; }
+  .stat .hint { font-size: 12px; color: #656d76; margin-top: 4px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 2px solid #d0d7de; margin-bottom: 16px; }
+  .tab { padding: 8px 18px; font-size: 14px; cursor: pointer; border: 1px solid transparent;
+         border-bottom: none; border-radius: 6px 6px 0 0; color: #57606a; background: transparent; }
+  .tab:hover { background: #eaeef2; }
+  .tab.active { background: #fff; border-color: #d0d7de; font-weight: 600; color: #0969da;
+                margin-bottom: -2px; padding-bottom: 10px; }
+  .card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px;
+          padding: 20px; margin-bottom: 16px; display: none; }
+  .card.active { display: block; }
+  .card h2 { font-size: 15px; margin-bottom: 4px; color: #24292f; }
+  .card .desc { font-size: 12.5px; color: #656d76; margin-bottom: 12px; }
+  .btn { display: inline-block; padding: 6px 14px; border: none; border-radius: 6px;
+         font-size: 13px; cursor: pointer; color: #fff; background: #0969da; }
+  .btn.gray { background: #6e7781; }
+  .btn.red { background: #cf222e; }
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px;
+        font-size: 13px; margin: 8px 0; }
+  .kv .k { color: #656d76; }
+  details { margin: 10px 0 4px; font-size: 12.5px; color: #656d76; }
+  details summary { cursor: pointer; user-select: none; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+  th, td { border: 1px solid #d0d7de; padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: #f6f8fa; color: #57606a; font-weight: 500; }
+  td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .name { font-weight: 600; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .tag.ok { background: #dafbe1; color: #1a7f37; }
+  .tag.warn { background: #fff8c5; color: #9a6700; }
+  .tag.bad { background: #ffebe9; color: #cf222e; }
+  .chip { display: inline-block; padding: 1px 8px; margin: 1px 4px 1px 0;
+          border-radius: 10px; background: #ddf4ff; color: #0969da; font-size: 12px; }
+  .chip.gray { background: #f6f8fa; color: #57606a; }
+  .muted { color: #656d76; font-size: 12.5px; margin-top: 8px; }
+  @media (max-width: 720px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>单点登录监控</h1>
+  <p class="sub">本系统与统一认证中心（Janus）的对接运行状态。由 janus-client-spring-boot-starter 内置，每 10 秒自动刷新。
+     <button class="btn" onclick="load()">立即刷新</button>
+     <button class="btn gray" onclick="toggleAuto()" id="autoBtn">暂停自动刷新</button></p>
+
+  <!-- 概览：一眼看清整体状态 -->
+  <div class="stats">
+    <div class="stat"><div class="label">接入状态</div><div class="value" id="stat-reg">加载中…</div><div class="hint" id="stat-reg-hint"></div></div>
+    <div class="stat"><div class="label">在线用户</div><div class="value" id="stat-online">-</div><div class="hint" id="stat-online-hint"></div></div>
+    <div class="stat"><div class="label">已缓存用户</div><div class="value" id="stat-cache">-</div><div class="hint" id="stat-cache-hint"></div></div>
+    <div class="stat"><div class="label">最近数据同步</div><div class="value" id="stat-notify">-</div><div class="hint" id="stat-notify-hint"></div></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="client">接入信息</div>
+    <div class="tab" data-tab="sessions">在线用户</div>
+    <div class="tab" data-tab="cache">信息缓存</div>
+    <div class="tab" data-tab="events">数据同步记录</div>
+  </div>
+
+  <!-- Tab 1: 接入信息 -->
+  <div class="card active" data-tab="client" id="tab-client">
+    <h2>接入信息</h2>
+    <p class="desc">本系统在认证中心登记的基本信息。</p>
+    <div id="clientInfo" class="kv">加载中…</div>
+    <details>
+      <summary>高级信息（一般无需关注）</summary>
+      <div id="clientAdvanced" class="kv"></div>
+    </details>
+  </div>
+
+  <!-- Tab 2: 在线用户 -->
+  <div class="card" data-tab="sessions" id="tab-sessions">
+    <h2>在线用户</h2>
+    <p class="desc" id="sessionDesc">当前通过单点登录进入本系统的用户。</p>
+    <table>
+      <thead><tr>
+        <th style="width:130px">姓名</th><th style="width:120px">用户名</th>
+        <th>所属机构</th><th>角色</th><th style="width:90px">登录会话</th>
+      </tr></thead>
+      <tbody id="sessions"><tr><td colspan="5">加载中…</td></tr></tbody>
+    </table>
+  </div>
+
+    <!-- Tab 3: 信息缓存 -->
+  <div class="card" data-tab="cache" id="tab-cache-user">
+    <h2>用户信息缓存</h2>
+    <p class="desc">已在本系统保存的用户基础信息，展示时可即时使用，不必每次都向认证中心查询。</p>
+    <div id="cacheConfig" class="kv"></div>
+    <details>
+      <summary>技术细节（一般无需关注）</summary>
+      <div id="cacheAdvanced" class="kv"></div>
+    </details>
+    <button class="btn red" onclick="manageCache('user','clear')">清空用户缓存</button>
+    <table>
+      <thead><tr>
+        <th style="width:110px">姓名</th><th style="width:110px">用户名</th>
+        <th>所属机构</th><th>角色</th><th>权限码</th><th style="width:110px">状态</th>
+      </tr></thead>
+      <tbody id="cacheEntries"><tr><td colspan="6">加载中…</td></tr></tbody>
+    </table>
+    <p class="muted" id="cacheMeta"></p>
+  </div>
+
+  <div class="card" data-tab="cache" id="tab-cache-org">
+    <h2>机构信息缓存</h2>
+    <p class="desc">已在本系统保存的机构（部门）信息，采用按需与层级缓存（LRU 模式）。</p>
+    <div id="orgConfig" class="kv"></div>
+    <details>
+      <summary>技术细节（一般无需关注）</summary>
+      <div id="orgAdvanced" class="kv"></div>
+    </details>
+    <button class="btn red" onclick="manageCache('org','clear')">清空机构缓存</button>
+    <table>
+      <thead><tr>
+        <th>机构名称</th><th style="width:100px">上级机构</th>
+        <th style="width:80px">状态</th><th>备注</th>
+      </tr></thead>
+      <tbody id="orgEntries"><tr><td colspan="4">加载中…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card" data-tab="cache" id="tab-cache-role">
+    <h2>角色信息缓存</h2>
+    <p class="desc">已在本系统保存的角色信息。</p>
+    <button class="btn red" onclick="manageCache('role','clear')">清空角色缓存</button>
+    <table>
+      <thead><tr>
+        <th>角色名称</th><th style="width:120px">角色编码</th>
+        <th style="width:80px">状态</th><th>备注</th>
+      </tr></thead>
+      <tbody id="roleEntries"><tr><td colspan="4">加载中…</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- Tab 4: 数据同步记录 -->
+  <div class="card" data-tab="events" id="tab-events">
+    <h2>数据同步记录</h2>
+    <p class="desc">认证中心管理员修改用户 / 机构 / 角色后，本系统自动同步更新的记录（最近 20 条）。</p>
+    <table>
+      <thead><tr><th style="width:170px">时间</th><th style="width:90px">结果</th>
+      <th>同步内容</th><th style="width:80px">更新数量</th></tr></thead>
+      <tbody id="events"><tr><td colspan="4">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  let autoTimer = setInterval(load, 10000);
+  function toggleAuto() {
+    const btn = document.getElementById('autoBtn');
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; btn.textContent = '恢复自动刷新'; }
+    else { autoTimer = setInterval(load, 10000); btn.textContent = '暂停自动刷新'; load(); }
+  }
+
+  // tab 切换（一个 tab 可对应多张卡片，如"信息缓存"= 用户+机构+角色）
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+      tab.classList.add('active');
+      document.querySelectorAll(`.card[data-tab="${tab.dataset.tab}"]`).forEach(c => c.classList.add('active'));
+    });
+  });
+
+  async function load() {
+    try {
+      const resp = await fetch('/sso/janus/monitor');
+      render(await resp.json());
+    } catch (e) {
+      document.getElementById('stat-reg').textContent = '加载失败';
+      document.getElementById('stat-reg').style.color = '#cf222e';
+    }
+  }
+
+  /** 缓存管理：domain=user/org/role，清空后下次访问自动按需回源 */
+  async function manageCache(domain) {
+    const name = { user: '用户', org: '机构', role: '角色' }[domain];
+    if (!confirm(`确定清空${name}缓存？下次使用时会自动重新获取。`)) return;
+    try {
+      await fetch(`/sso/janus/monitor/cache?domain=${domain}`, { method: 'POST' });
+      alert(`${name}缓存已清空。`);
+      load();
+    } catch (e) {
+      alert('操作失败: ' + e);
+    }
+  }
+
+  function fmtTime(millis) {
+    return millis ? new Date(millis).toLocaleString('zh-CN', { hour12: false }) : '-';
+  }
+  /** ISO 时间 → 本地格式（2026-10-09 17:38:32） */
+  function fmtIso(iso) {
+    const d = iso ? new Date(iso) : null;
+    return d && !isNaN(d) ? d.toLocaleString('zh-CN', { hour12: false }) : (iso ?? '-');
+  }
+  /** ISO 时间 → 仅时分秒（17:38:32） */
+  function fmtTimeOnly(iso) {
+    const d = iso ? new Date(iso) : null;
+    return d && !isNaN(d) ? d.toLocaleTimeString('zh-CN', { hour12: false }) : '-';
+  }
+  /** 秒数 → 人话（2592000s → 30天，7200s → 2小时） */
+  function fmtDuration(sec) {
+    sec = Number(sec);
+    if (isNaN(sec)) return '-';
+    if (sec % 86400 === 0) return (sec / 86400) + ' 天';
+    if (sec % 3600 === 0) return (sec / 3600) + ' 小时';
+    if (sec % 60 === 0) return (sec / 60) + ' 分钟';
+    return sec + ' 秒';
+  }
+  /** 过长的 uid 缩略显示：u00000000…001 */
+  function shortId(id) {
+    if (!id) return '-';
+    return id.length > 14 ? id.slice(0, 8) + '…' + id.slice(-3) : id;
+  }
+  /** HTML 转义：所有来自服务端的动态数据进入 innerHTML 前必须经过此函数（防存储型 XSS，如用户 realName 注入） */
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  /** 等宽字体展示（内容已转义） */
+  function mono(v) { return '<span class="mono">' + esc(v) + '</span>'; }
+  function chips(items, gray) {
+    if (!items || !items.length) return '<span class="chip gray">无</span>';
+    return items.map(i => `<span class="chip${gray ? ' gray' : ''}">${esc(i)}</span>`).join('');
+  }
+  function deptText(u) {
+    if (u.deptName) return esc(u.deptName);
+    return '<span class="chip gray">未分配</span>';
+  }
+  function kv(pairs) {
+    return pairs.filter(Boolean).map(([k, v]) => `<span class="k">${k}</span><span>${v ?? '-'}</span>`).join('');
+  }
+
+  function render(m) {
+    // ===== 顶部概览 =====
+    const state = m.registration.state;
+    const badge = { REGISTERED: ['ok', '已接入'], RETRYING: ['warn', '接入中（重试）'],
+                    REJECTED: ['bad', '接入被拒绝'], PENDING: ['warn', '未接入'] }[state] || ['warn', state];
+    const regColor = { ok: '#1a7f37', warn: '#9a6700', bad: '#cf222e' }[badge[0]];
+    const regEl = document.getElementById('stat-reg');
+    regEl.textContent = badge[1];
+    regEl.style.color = regColor;
+    document.getElementById('stat-reg-hint').textContent = m.registration.message || '';
+
+    // 在线用户：按人聚合
+    const sessions = m.login.sessions || [];
+    const byUid = new Map();
+    sessions.forEach(s => {
+      if (!byUid.has(s.uid)) byUid.set(s.uid, { ...s, count: 0 });
+      byUid.get(s.uid).count++;
+    });
+    const users = [...byUid.values()];
+    document.getElementById('stat-online').textContent = users.length;
+    document.getElementById('stat-online').style.color = '#24292f';
+    document.getElementById('stat-online-hint').textContent =
+      sessions.length > users.length ? `共 ${sessions.length} 个登录会话` : '';
+
+    document.getElementById('stat-cache').textContent = m.cache.user.size;
+    document.getElementById('stat-cache-hint').textContent = `有效期 ${fmtDuration(Number(m.cache.user.expireHours) * 3600)}`;
+
+    const evs = m.notifyEvents || [];
+    if (evs.length) {
+      const d = new Date(evs[0].time);
+      const isToday = !isNaN(d) && d.toDateString() === new Date().toDateString();
+      document.getElementById('stat-notify').textContent = fmtTimeOnly(evs[0].time);
+      const statusText = evs[0].status === 'accepted' ? '同步成功' : '同步失败';
+      document.getElementById('stat-notify-hint').textContent =
+        isToday ? statusText : `${statusText}（${d.getMonth() + 1}月${d.getDate()}日）`;
+    } else {
+      document.getElementById('stat-notify').textContent = '暂无';
+      document.getElementById('stat-notify-hint').textContent = '数据无变化';
+    }
+
+    // ===== Tab 1: 接入信息 =====
+    document.getElementById('clientInfo').innerHTML = kv([
+      ['应用名称', esc(m.client.appName)],
+      ['应用标识', mono(m.client.client)],
+      ['认证中心地址', mono(m.client.serverUrl)],
+      ['本系统地址', mono(m.client.clientUrl)]
+    ]);
+    document.getElementById('clientAdvanced').innerHTML = kv([
+      ['登录凭证请求头', mono(m.login.tokenName)],
+      ['数据通知接口', mono(m.client.notifyPath)],
+      ['签名密钥', mono(m.client.secretKey)],
+      ['接入状态', esc(badge[1]) + (m.registration.retries > 0 ? `（已重试 ${m.registration.retries} 次）` : '')],
+      ['状态更新时间', fmtTime(m.registration.timeMillis)]
+    ]);
+
+    // ===== Tab 2: 在线用户（按人聚合）=====
+    document.getElementById('sessionDesc').textContent =
+      `会话有效期 ${fmtDuration(m.login.timeout)} · ` +
+      (m.login.activeTimeout == null || m.login.activeTimeout < 0 ? '无操作不自动过期' : `无操作 ${fmtDuration(m.login.activeTimeout)} 后自动过期`) +
+      '。同一用户多次登录合并为一行。';
+    document.getElementById('sessions').innerHTML = users.length
+      ? users.map(s => `<tr>
+          <td class="name">${esc(s.realName ?? s.username ?? '-')}</td>
+          <td>${esc(s.username ?? '-')}</td>
+          <td>${deptText(s)}</td><td>${chips(s.roles)}</td>
+          <td><span class="chip gray">${s.count} 个会话</span></td></tr>`).join('')
+      : '<tr><td colspan="5">当前没有用户登录。用户登录本系统后，这里会显示在线用户及其机构、角色。</td></tr>';
+
+    // ===== Tab 3: 信息缓存 =====
+    const u = m.cache.user;
+    document.getElementById('cacheConfig').innerHTML = kv([
+      ['已缓存用户', `${u.size} 位`],
+      ['有效期', `${fmtDuration(Number(u.expireHours) * 3600)}（到期自动更新）`],
+      ['容量上限', `${u.maxSize} 位`]
+    ]);
+    document.getElementById('cacheAdvanced').innerHTML = kv([
+      ['回源模式', `按需 LRU 模式（上限 ${u.maxSize} 人，按需回源）`],
+      ['累计拉取次数', u.loadCount],
+      ['容量淘汰次数', u.evictionCount]
+    ]);
+    document.getElementById('cacheEntries').innerHTML = u.entries.length
+      ? u.entries.map(renderUserRow).join('')
+      : '<tr><td colspan="6">缓存为空。用户登录或访问业务接口后会自动按需加载。</td></tr>';
+    document.getElementById('cacheMeta').textContent =
+      `当前缓存 ${u.size} / ${u.maxSize} 位用户` + (u.entries.length >= 200 ? '（表格最多展示 200 条）' : '');
+
+    // 机构缓存
+    const o = m.cache.org;
+    document.getElementById('orgConfig').innerHTML = kv([
+      ['已缓存机构', `${o.size || 0} 个`],
+      ['容量上限', `${o.maxSize || 5000} 个`],
+      ['回源模式', '按需 / 层级 / 分页搜索回源']
+    ]);
+    document.getElementById('orgAdvanced').innerHTML = kv([
+      ['累计拉取次数', o.loadCount ?? 0],
+      ['容量淘汰次数', o.evictionCount ?? 0]
+    ]);
+    document.getElementById('orgEntries').innerHTML = o.entries.length
+      ? o.entries.map(d => `<tr><td class="name">${esc(d.deptName)}</td>
+          <td>${d.parentId ? esc(shortId(d.parentId)) : '无（顶级）'}</td>
+          <td>${statusTag(d.status)}</td><td>${esc(d.remark ?? '-')}</td></tr>`).join('')
+      : `<tr><td colspan="4">缓存为空。业务代码用到机构信息时自动按需拉取。</td></tr>`;
+
+    // 角色缓存
+    const r = m.cache.role;
+    document.getElementById('roleEntries').innerHTML = r.entries.length
+      ? r.entries.map(x => `<tr><td class="name">${esc(x.roleName)}</td>
+          <td class="mono">${esc(x.roleKey)}</td><td>${statusTag(x.status)}</td><td>${esc(x.remark ?? '-')}</td></tr>`).join('')
+      : `<tr><td colspan="4">${r.loaded ? '角色数据为空。' : '尚未加载。业务代码用到角色信息时自动拉取。'}</td></tr>`;
+
+    // ===== Tab 4: 数据同步记录 =====
+    // uid → 姓名 映射（优先取在线用户，其次取缓存用户），让同步记录显示人名而不是一串 ID
+    const nameMap = new Map();
+    users.forEach(s => nameMap.set(s.uid, s.realName ?? s.username));
+    u.entries.forEach(e => { if (e.exists && e.realName) nameMap.set(e.uid, e.realName); });
+    const nameOf = id => nameMap.get(id) || shortId(id);
+    const orgMap = new Map(o.entries.map(d => [d.deptId, d.deptName]));
+    const roleMap = new Map(r.entries.map(x => [x.roleId, x.roleName]));
+
+    const tbody = document.getElementById('events');
+    if (!evs.length) {
+      tbody.innerHTML = '<tr><td colspan="4">暂无记录。认证中心的管理员修改用户 / 机构 / 角色数据后，同步记录会出现在这里。</td></tr>';
+      return;
+    }
+    tbody.innerHTML = evs.map(e => {
+      const mark = e.status === 'accepted' ? '<span class="tag ok">已同步</span>'
+                 : e.status === 'malformed' ? '<span class="tag bad">通知异常</span>'
+                 : '<span class="tag bad">已拒绝</span>';
+      const parts = [];
+      if ((e.uids || []).length) parts.push('用户：' + e.uids.map(i => `<span class="chip">${esc(nameOf(i))}</span>`).join(''));
+      if ((e.deptIds || []).length) parts.push('机构：' + e.deptIds.map(i => `<span class="chip gray">${esc(orgMap.get(i) || shortId(i))}</span>`).join(''));
+      if ((e.roleIds || []).length) parts.push('角色：' + e.roleIds.map(i => `<span class="chip gray">${esc(roleMap.get(i) || shortId(i))}</span>`).join(''));
+      const total = (e.uids || []).length + (e.deptIds || []).length + (e.roleIds || []).length;
+      return `<tr><td class="mono">${fmtIso(e.time)}</td><td>${mark}</td>` +
+             `<td>${parts.length ? parts.join('<br>') : '<span class="chip gray">无</span>'}</td>` +
+             `<td>${total ? total + ' 条' : '-'}</td></tr>`;
+    }).join('');
+  }
+
+  function renderUserRow(user) {
+    if (!user.exists) {
+      return `<tr><td colspan="5"><span class="tag warn">该用户已不存在（结果已记住，避免反复查询）</span>
+              <span class="chip gray" title="${esc(user.uid)}">ID: ${esc(shortId(user.uid))}</span></td>
+              <td><span class="tag warn">占位</span></td></tr>`;
+    }
+    return `<tr>
+          <td class="name">${esc(user.realName ?? '-')}</td><td>${esc(user.username ?? '-')}</td>
+          <td>${deptText(user)}</td><td>${chips(user.roles)}</td><td>${chips(user.authCodes, true)}</td>
+          <td><span class="tag ok">正常</span></td></tr>`;
+  }
+
+  function statusTag(status) {
+    return status != null && status === 1
+      ? '<span class="tag ok">启用</span>'
+      : '<span class="tag warn">停用</span>';
+  }
+
+  load();
+</script>
+</body>
+</html>

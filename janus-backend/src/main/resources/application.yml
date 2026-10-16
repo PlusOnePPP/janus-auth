@@ -1,0 +1,196 @@
+# 后台管理 Java 后端 - 主配置（环境相关配置放 application-{profile}.yml）
+
+spring:
+  application:
+    name: janus
+  profiles:
+    # 生产环境用 --spring.profiles.active=prod 覆盖
+    active: dev
+  # Flyway 数据库版本控制：启动时自动迁移 classpath:db/migration（V1__init.sql 全量脚本，含 sso_client_registry）
+  # baseline-on-migrate=true + baseline-version=1 兼容两类环境：
+  #   · 全新空库          → 无历史表且 schema 为空，直接全量执行 V1 建表；
+  #   · 手工初始化过的老库 → schema 非空但无历史表，自动 baseline 到 1 跳过 V1（表已存在），
+  #     仅执行后续新增脚本，避免"有表无历史"导致的启动报错。
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 1
+  # 头像等上传文件的 multipart 上限（业务上限 5MB 在代码内校验）
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+  # 邮件服务（邮箱验证码/通知邮件）：janus.auth.email-mock=true 时不依d赖此项；
+  # 生产改为真实 SMTP 后将 email-mock 置 false，并通过 SPRING_MAIL_* 环境变量注入凭证。
+  mail:
+    host: ${SPRING_MAIL_HOST:smtp.example.com}
+    port: ${SPRING_MAIL_PORT:465}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    default-encoding: UTF-8
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.ssl.enable: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+
+  # Redis 缓存与会话存储（Sa-Token 模式二统一 Token 共享存储）
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:26379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:janus@123}
+      database: ${SPRING_DATA_REDIS_DATABASE:0}
+      timeout: 10s
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+server:
+  # 前端静态资源在根路径 "/"，业务 API 由各 Controller 显式带 /api 前缀（SSO 端点保持原生 /sso），
+  # 对齐前端 VITE_GLOB_API_URL=/api
+  port: 8899
+  # - 本地调试想回 http：env JANUS_SSL_ENABLED=false
+  # - 客户自备证书：将 p12 放入数据目录 ssl/ 子目录（容器内 /app/janus_workspace/ssl/），再注入 3 个环境变量：
+  #     JANUS_SSL_KEY_STORE=/app/janus_workspace/ssl/customer.p12
+  #     JANUS_SSL_KEY_STORE_PASSWORD=<客户证书密码>
+  #     JANUS_SSL_KEY_ALIAS=<客户证书别名>
+  #   type/protocol/ciphers 继承下方默认值；部署机 p12 转换命令：
+  #     openssl pkcs12 -export -in server.crt -inkey server.key -out customer.p12 -name <alias>
+  ssl:
+    enabled: ${JANUS_SSL_ENABLED:true}
+    key-store: ${JANUS_SSL_KEY_STORE:classpath:janus.p12}
+    key-store-type: PKCS12
+    key-store-password: ${JANUS_SSL_KEY_STORE_PASSWORD:change-me}
+    protocol: TLS
+    enabled-protocols: TLSv1.3,TLSv1.2
+    ciphers: TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+
+# Sa-Token（accessToken）：API 调用从 Authorization: Bearer 头读取，有效期 2 小时；
+# 浏览器 302 导航场景（SSO /sso/auth 发票）从会话 Cookie 读取——故 is-read-cookie 必须开启
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer
+  timeout: 7200
+  # 【多设备登录开关】是否允许同一账号多处同时登录（并发登录）：
+  # - true (默认): 允许多端/多设备同时在线，各设备持有独立 Token，退出时仅当前设备注销，互不干扰；
+  # - false: 单设备互踢模式，新设备登录会强制将旧设备踢下线（在 Redis 中顶替）。
+  is-concurrent: ${JANUS_AUTH_CONCURRENT_LOGIN:true}
+  # 多端登录时是否共用同一个 Token：
+  # 必须设为 false，确保每台设备分配独立 Token，从而实现“按当前 Token 退出只退当前设备”；
+  # 若设为 true，所有设备共用同一 Token，则退一个就退所有。
+  is-share: false
+  token-style: uuid
+  is-read-cookie: true
+  is-read-header: true
+  is-log: false
+  # token-prefix 场景必须开启：从 Cookie 读取原始 token 时自动补 "Bearer " 前缀，否则 Cookie 会话永远无法被识别
+  cookie-auto-fill-prefix: true
+  cookie:
+    http-only: true
+    same-site: Lax
+
+  # SSO-Server 配置（模式二：共享 Redis 统一 Token，支持跨端凭证互认与自动续期）
+  sso-server:
+    # ticket 一次性、5 分钟有效
+    ticket-timeout: 300
+    # 强制校验客户端签名（check-ticket / getData 的 sign 参数）
+    is-check-sign: true
+    # clients 不再静态配置：各业务系统启动时通过 POST /sso/janus/openApi/register 自助注册
+    # （信息在客户端 janus.client.* 中维护，认证中心持久化至 sso_client_registry 表并热同步，
+    # 重启后自动从注册表恢复；见 SsoClientRegistryService）
+
+# 自定义认证配置（refreshToken：HttpOnly Cookie，轮换式，有效期默认 7 天）
+janus:
+  # 站点信息预置（预安装交付场景）：install.sh 把 --site-name 等参数写入包目录 .env，
+  # compose 注入环境变量，应用启动时自动完成首次初始化（客户打开直接进登录页，不再出现安装向导）。
+  # 仅在首次安装时生效；已安装（升级/重装）自动跳过，不覆盖已有配置。开关默认关闭。
+  site:
+    preset-enabled: ${JANUS_SITE_PRESET_ENABLED:false}
+    preset-name: ${JANUS_SITE_PRESET_NAME:}
+    preset-desc: ${JANUS_SITE_PRESET_DESC:}
+    preset-copyright: ${JANUS_SITE_PRESET_COPYRIGHT:}
+  # SSO 单点登录（SSO-Server 侧）
+  sso:
+    # 认证中心未登录时跳转的门户登录页（门户登录成功后按 ?redirect= 跳回 /sso/auth）
+    # 默认用相对路径：浏览器按当前访问的 origin 解析，部署到任何 IP/域名/端口都零配置，
+    # docker 无需注入服务器地址；必须带 #（构建产物是 hash 路由，?redirect= 要落在 hash 内）。
+    # 仅当认证中心与门户不同域时才需环境变量 JANUS_SSO_PORTAL_LOGIN_URL 指定绝对地址
+    portal-login-url: "${JANUS_SSO_PORTAL_LOGIN_URL:/#/auth/login}"
+  auth:
+    refresh-token-days: 7
+    # HTTPS 下必须 true（Secure Cookie），否则 refresh-token Cookie 不受传输安全保护；
+    # 本地 http 调试保持 false（浏览器会拒绝在 http 下存 Secure Cookie）。
+    # 容器/生产 https 态由 compose 注入 JANUS_AUTH_COOKIE_SECURE=true。
+    cookie-secure: ${JANUS_AUTH_COOKIE_SECURE:false}
+    cookie-same-site: Lax
+    # 登录辅助功能：短信/邮箱验证码发送。默认 false（生产态：需接入真实短信/邮件服务）；
+    # 开发联调在 application-dev.yml 中打开 mock（验证码回显到日志，免去真实网关依赖）。
+    # 敏感凭证优先级：环境变量 > 本文件占位符；也可用 application-local.yml（已 gitignore）覆盖。
+    sms-mock: ${JANUS_AUTH_SMS_MOCK:false}
+    email-mock: ${JANUS_AUTH_EMAIL_MOCK:false}
+    # 安全开关（默认全关，防生产后门）：手机号/OAuth 首次登录是否自动建号。
+    # 关闭时报「该手机号未注册」/「该第三方账号未绑定系统用户」；
+    # 开发联调在 application-dev.yml 中打开（JANUS_AUTH_PHONE_AUTO_REGISTER / JANUS_AUTH_OAUTH_AUTO_REGISTER）。
+    phone-auto-register: ${JANUS_AUTH_PHONE_AUTO_REGISTER:false}
+    oauth-auto-register: ${JANUS_AUTH_OAUTH_AUTO_REGISTER:false}
+
+    # 登录方式开关（开箱即用的唯一入口）：经 GET /auth/config 下发给前端控制登录页显隐，
+    # 后端各辅助接口同步校验。第三方登录默认关闭；需要演示时改为 true 或配 env JANUS_AUTH_LOGIN_METHODS_OAUTH=true。
+    login-methods:
+      account: true       # 账号密码登录
+      phone: false         # 手机验证码登录
+      qrcode: false        # 扫码登录（另一台已登录设备扫码确认）
+      register: false      # 注册入口
+      oauth: false        # 第三方 OAuth（qq/wechat/github/google 总开关）
+    # 头像等上传文件的存储根目录，位于统一工作目录 janus_workspace 下的 uploads/ 子目录。
+    # 可用 JANUS_AUTH_UPLOAD_DIR 单独覆盖；根目录统一由 JANUS_WORKSPACE_DIR 控制。
+    upload-dir: ${JANUS_AUTH_UPLOAD_DIR:${JANUS_WORKSPACE_DIR:janus_workspace}/uploads}
+
+    # ------------------------------------------------------------------
+    # 第三方 OAuth 登录（qq / wechat / github / google）
+    # client-id/secret 留空时该 provider 走本地 mock 流程（前端可点通演示）；
+    # 配置真实凭证后授权跳转官方页。enabled=false 时前端应隐藏对应图标。
+    # 凭证获取：
+    #   qq     -> https://connect.qq.com（QQ互联，需备案域名）
+    #   wechat -> https://open.weixin.qq.com（微信开放平台，网站应用需企业资质）
+    #   github -> https://github.com/settings/developers（OAuth Apps，个人即可）
+    #   google -> https://console.cloud.google.com/apis/credentials（OAuth 客户端 ID）
+    # 回调地址须与平台后台登记的一致：{redirect-uri}
+    # ------------------------------------------------------------------
+    oauth:
+      qq:
+        enabled: true
+        client-id: ${JANUS_AUTH_OAUTH_QQ_CLIENT_ID:}
+        client-secret: ${JANUS_AUTH_OAUTH_QQ_CLIENT_SECRET:}
+        redirect-uri: ${JANUS_AUTH_OAUTH_QQ_REDIRECT_URI:http://localhost:8080/api/auth/oauth/callback/qq}
+      wechat:
+        enabled: true
+        client-id: ${JANUS_AUTH_OAUTH_WECHAT_CLIENT_ID:}
+        client-secret: ${JANUS_AUTH_OAUTH_WECHAT_CLIENT_SECRET:}
+        redirect-uri: ${JANUS_AUTH_OAUTH_WECHAT_REDIRECT_URI:http://localhost:8080/api/auth/oauth/callback/wechat}
+      github:
+        enabled: true
+        client-id: ${JANUS_AUTH_OAUTH_GITHUB_CLIENT_ID:}
+        client-secret: ${JANUS_AUTH_OAUTH_GITHUB_CLIENT_SECRET:}
+        redirect-uri: ${JANUS_AUTH_OAUTH_GITHUB_REDIRECT_URI:http://localhost:8080/api/auth/oauth/callback/github}
+      google:
+        enabled: true
+        client-id: ${JANUS_AUTH_OAUTH_GOOGLE_CLIENT_ID:}
+        client-secret: ${JANUS_AUTH_OAUTH_GOOGLE_CLIENT_SECRET:}
+        redirect-uri: ${JANUS_AUTH_OAUTH_GOOGLE_REDIRECT_URI:http://localhost:8080/api/auth/oauth/callback/google}
+    # 验证码邮件发件人（显示为发件地址，一般与 spring.mail.username 相同）
+    mail-from: ${JANUS_AUTH_MAIL_FROM:}
+
+# API 文档：knife4j（基于 springdoc-openapi 2），入口 /api/doc.html；生产环境建议关闭
+springdoc:
+  api-docs:
+    enabled: true
+knife4j:
+  enable: true
+  setting:
+    language: zh-CN

@@ -1,0 +1,17 @@
+{
+  "name": "@vben/icons",
+  "version": "5.7.0",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@iconify/json": "catalog:",
+    "@iconify/vue": "catalog:",
+    "@vben-core/icons": "workspace:*"
+  }
+}

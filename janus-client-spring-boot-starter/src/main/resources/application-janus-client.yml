@@ -1,0 +1,105 @@
+# ============================================================================
+# Janus SSO 客户端 Starter —— 全量配置参考（janus.client.*）
+# 本文件随 jar 发布，业务方可直接从 classpath 引入查看/继承全部配置项。
+#
+# 用法一（推荐）：把 janus.client 段拷贝到业务系统自己的 application.yml，
+#                替换必配 4 项的真实值，删除用不到的项；
+# 用法二：application.yml 中一行引入（本文件即生效，值需自行覆盖）：
+#           spring.config.import: classpath:application-janus-client.yml
+#         注意：import 后 demo-app/your-secret-key 等占位值也会生效，
+#         正式接入必须在自己的 application.yml 覆盖必配 4 项
+#         （优先级：业务 application.yml > 本文件）。
+# 标注 [默认] 的项不配置时自动生效；「必配」项缺一不可。
+#
+# IDE 补全：starter 已内置 spring-boot-configuration-processor，
+# 业务工程中输入 janus.client 即可自动提示全部配置项与说明。
+# ============================================================================
+
+janus:
+  client:
+    # ------------------------------------------------------------------
+    # 必配（4 项）：缺任何一项 starter 装配失败并给出明确报错
+    # ------------------------------------------------------------------
+    # 认证中心地址。SSO 端点为 Sa-Token 原生前缀 /sso，此处不需要任何附加路径。
+    # 【同机/预装部署】可配为 https://127.0.0.1:8899（回环地址）：后端链路
+    # （Redis 验票/注册/对账/SLO 回调）全部走本机回环，与机器对外 IP 无关；
+    # 浏览器登录跳转由 starter 自动跟随用户实际访问地址（协议与端口仍取自本值），
+    # 多网卡多 IP、修改机器 IP 均零配置自适应。跨机部署请配真实地址
+    server-url: http://localhost:8080
+
+    # 应用标识（认证中心侧唯一）。启动时通过 POST /sso/janus/openApi/register
+    # 自助注册/幂等更新，无需在认证中心手工登记
+    client: demo-app
+
+    # 接口签名密钥（HMAC-SHA256，用于验票 / getData / SLO 回调签名）。
+    # 首次注册成功后由认证中心下发并在监控页可见，需与登记值保持一致
+    secret-key: your-secret-key
+
+    # 本系统对外访问地址。单点登出（SLO）时认证中心向
+    # {client-url}/sso/logoutCall 推送全端注销回调，务必是可达地址
+    client-url: http://localhost:8081
+
+    # ------------------------------------------------------------------
+    # 可选项（均有合理默认，按需覆盖）
+    # ------------------------------------------------------------------
+    # starter 总开关：false 时整个自动装配不生效
+    # （认证拦截器 / JanusClient / 自助注册 / 失效通知 / 监控页全部不注册），
+    # 适合本地调试临时关掉 Janus 认证。注意：此开关由装配条件直接读取，
+    # 不在 JanusClientProperties 绑定范围内，但 IDE 同样可补全提示 [默认：true]
+    enabled: true
+
+    # 应用显示名（注册上报认证中心，管理端展示用）[默认：取 client 的值]
+    app-name: 示例应用
+
+    # 客户端监控页开关（/sso/janus/monitor + /sso/janus/monitor.html，免登录）
+    # 生产环境如不希望暴露可关闭 [默认：true]
+    monitor-enabled: true
+
+    # 拦截模式一（默认）：排除法 —— 全部请求 /** 先纳入拦截，再挖掉以下路径。
+    # 下方默认值已放行 SSO 路由与首页静态资源，业务只需追加自己的公开接口 [默认：如下]
+    exclude-paths:
+      - /sso/**
+      - /
+      - /index.html
+      - /favicon.ico
+      - /error
+
+    # 拦截模式二（可选）：白名单法 —— 只拦以下路径，其余一律放行。
+    # 适合"少数路径才需要登录"的场景（如网关项目仅 /admin/** 需登录，代理前缀动态多变无法枚举）。
+    # 不配置即维持模式一；两种模式下 exclude-paths（含 starter 端点自动放行）始终生效 [默认：空]
+    include-paths: []
+
+    # 全网统一 Token-Name（必须与认证中心一致，同时决定 Redis key 前缀与 Cookie 名）[默认：Authorization]
+    token-name: Authorization
+
+    # 共享 Redis 连接配置（与认证中心连接同一 Redis 实例；会自动映射为 spring.data.redis.*）。
+    # 【智能免配提示】：若 Redis 与 Janus 认证中心部署在一起，下方 redis 节点可完全省略不配！
+    # starter 会自动从上方 server-url 中解析提取 host，并采用默认端口 26379 与密码 janus@123。
+    # 仅当 Redis 为独立外部实例时才需显式配置下方参数。
+    redis:
+      # 认证中心 Redis 地址 [默认：自动从 server-url 提取 host，若无则为 localhost]
+      host: localhost
+      # 认证中心 Redis 端口（docker-compose 默认暴露 26379）[默认：26379]
+      port: 26379
+      # Redis 访问密码 [默认：janus@123]
+      password: "janus@123"
+      # Redis 数据库索引（必须与认证中心完全一致）[默认：0]
+      database: 0
+      # 连接超时时间 [默认：10s]
+      timeout: 10s
+
+    # 用户信息本地缓存（Caffeine）
+    cache:
+      # 最大缓存条目数 [默认：50000]
+      max-size: 50000
+      # 写入后过期小时数（EMPTY 哨兵与正常用户同 TTL）[默认：12]
+      expire-hours: 12
+
+# ============================================================================
+# 以下行为由 starter 固定，业务侧无配置项、也无需配置：
+#   · 模式二共享 Redis 验票与统一 Token：一次登录，认证中心与所有客户端共用同一 Token
+#   · 失效通知接收路径固定 POST /sso/janus/openApi/notify（启动时自动上报认证中心）
+#   · 本地会话与请求头 Token 名 = Authorization，安全基线强制 HttpOnly + SameSite=Lax
+#   · sa-token.* 与 spring.data.redis.* 配置严格禁止出现在业务 yml（starter 代码内完成全部封装）
+#   · 拦截器放行 notify / monitor 端点，业务零配置
+# ============================================================================

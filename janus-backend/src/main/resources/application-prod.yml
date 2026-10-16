@@ -1,0 +1,45 @@
+# 生产环境配置（激活方式：SPRING_PROFILES_ACTIVE=prod，或 docker compose 里加该 environment）
+#
+# 约定：
+#   - 本文件只放「生产态」相关项；DB 等敏感/环境相关值一律用 ${ENV:默认值} 占位符，
+#     真正的值由 docker-compose.yml 的 environment（DB_HOST/DB_USERNAME/DB_PASSWORD 等）
+#     或宿主机环境变量注入，不在此写死。
+#   - 与 application-dev.yml 不同的点：短信/邮箱 mock 关闭、手机号/OAuth 自动建号关闭
+#     （杜绝生产后门）；如需临时兜底，仍可用 -e JANUS_AUTH_SMS_MOCK=true 覆盖。
+
+spring:
+  datasource:
+    # 库表结构由 Flyway 启动时自动迁移（classpath:db/migration）；仅需先建好数据库 janus_admin
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:janus_admin}
+    username: ${DB_USERNAME:spec}
+    password: ${DB_PASSWORD:123456}
+    driver-class-name: org.postgresql.Driver
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:redis}
+      port: ${SPRING_DATA_REDIS_PORT:26379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:janus@123}
+      database: ${SPRING_DATA_REDIS_DATABASE:0}
+
+mybatis-plus:
+  configuration:
+    # 不设 log-impl：MyBatis-Plus 自动探测 SLF4J，SQL 走 mapper logger 的 DEBUG（默认 INFO 不打印）
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+
+logging:
+  level:
+    # 压掉框架 DEBUG 噪声
+    org.mybatis: warn
+    org.springframework.jdbc: warn
+    com.janus: info
+
+janus:
+  auth:
+    # 生产态：不 mock（需接入真实短信/邮件服务）；如需临时兜底可 -e JANUS_AUTH_SMS_MOCK=true
+    sms-mock: false
+    email-mock: false
+    # 生产态：首次登录不自动建号（防后门）；关闭时报「该手机号/第三方账号未注册」
+    phone-auto-register: false
+    oauth-auto-register: false

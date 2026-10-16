@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logback 配置（Spring Boot 默认日志框架）：日志写到统一工作目录 janus_workspace 下的 logs/ 子目录（jar 外部，可持久化/挂载卷）。
+  - 统一根目录由 JANUS_WORKSPACE_DIR 控制（默认相对 janus_workspace；Docker 中即 /app/janus_workspace）。
+  - 日志目录 = ${JANUS_WORKSPACE_DIR}/logs；仍可用 JANUS_LOG_DIR 单独覆盖。
+  - 同时保留控制台输出，便于 docker logs 查看。
+  - 各 logger 级别仍由 application.yml 的 logging.level 控制。
+-->
+<configuration scan="true" scanPeriod="60 seconds">
+
+    <!-- 引入 Spring Boot 内置转换规则（clr/wex/wEx 等彩色与异常转换器）；
+         不用 %clr 会因转换器未注册而初始化失败。必须放在自定义 property 之前。 -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml" />
+
+    <property name="LOG_DIR" value="${JANUS_LOG_DIR:-${JANUS_WORKSPACE_DIR:-janus_workspace}/logs}"/>
+    <property name="LOG_FILE" value="${LOG_DIR}/janus.log"/>
+    <property name="CONSOLE_PATTERN"
+              value="%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%-5level) %clr(${PID:- }){magenta} %clr(%logger{36}){cyan} - %msg%n"/>
+    <property name="FILE_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"/>
+
+    <appender name="Console" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${CONSOLE_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 按天 + 按大小滚动，压缩归档，最多保留 30 天 / 5GB -->
+    <appender name="RollingFile" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_FILE}</file>
+        <encoder>
+            <pattern>${FILE_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/janus.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>5GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="Console"/>
+        <appender-ref ref="RollingFile"/>
+    </root>
+
+</configuration>

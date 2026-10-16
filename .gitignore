@@ -1,0 +1,35 @@
+# Maven
+target/
+*.class
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# Frontend
+node_modules/
+dist/
+.pnpm-store/
+
+# 单体部署：前端构建产物打入后端静态资源（由 maven 的 antrun 生成到 target/classes/static，不入库）
+janus-backend/src/main/resources/static/
+# frontend-maven-plugin 在 janus-frontend 内下载的 node/pnpm（不入库）
+janus-frontend/node/
+
+# OS
+.DS_Store
+Thumbs.db
+
+janus-frontend/node_modules/
+.trae/
+/.trae/
+/janus_workspace/
+/janus-backend/janus_workspace/
+/package-files/*.tar.gz
+/package-files/.env
+/package-files/janus-install-*

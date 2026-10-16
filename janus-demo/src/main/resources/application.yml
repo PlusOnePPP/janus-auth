@@ -1,0 +1,40 @@
+# Janus 统一认证接入演示（Sa-Token SSO 模式二共享 Redis 统一 Token 客户端）
+server:
+  port: 8081
+
+spring:
+  application:
+    name: demo-app
+
+# Janus 客户端接入
+janus:
+  client:
+    # 认证中心地址
+    server-url: https://localhost:8899
+    # 应用标识
+    client: demo-app
+    app-name: 测试应用
+    # 接口签名密钥
+    secret-key: demo-sso-secret-2026
+    # 本系统访问地址
+    client-url: http://localhost:8081
+    # 全网统一 Token-Name
+    token-name: Authorization
+    # 共享 Redis 配置（模式二直连认证中心 Redis）
+    redis:
+      host: ${JANUS_CLIENT_REDIS_HOST:localhost}
+      port: ${JANUS_CLIENT_REDIS_PORT:26379}
+      password: ${JANUS_CLIENT_REDIS_PASSWORD:janus@123}
+      database: 0
+    # 认证拦截器放行路径
+    exclude-paths:
+      - /sso/**
+      - /
+      - /index.html
+      - /favicon.ico
+      - /error
+      - /api/demo/config
+
+logging:
+  level:
+    com.company.janus.client: info

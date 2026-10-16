@@ -1,0 +1,98 @@
+# 一条命令拉起整套服务：PostgreSQL + Janus（前端已打进 jar）
+# 用法：
+#   1) 先打好镜像（maven 打包 + docker build，见 Dockerfile）
+#   2) 在本目录执行：  docker compose up -d
+#   停止：docker compose down      （加 -v 会连 pgdata 卷一起删，慎用于生产）
+#
+# 说明：
+#   - 网络模式：janus 主服务为 host 模式（8899 直接监听宿主机），业务系统（host 模式）
+#     通过 127.0.0.1:8899 直连，janus 回调业务系统也走 127.0.0.1，零机器 IP、零 docker 网络互联。
+#   - janus 连 PG/Redis 用环境变量（DB_HOST/SPRING_DATA_REDIS_HOST=127.0.0.1:25432/26379 发布端口）。
+#   - 其余配置（短信/邮件 mock、上传目录等）jar 内已有默认值，无需外挂 yml。
+#   - 日志/上传/数据库全部落在固定目录（默认 /opt/janus_workspace，可用 JANUS_DATA_DIR 覆盖，已挂卷，删容器不丢）。
+#     用固定绝对路径而非相对路径，是为了升级时解压到新日期目录也不丢数据。
+#   - 想改密码/库名，直接改下面 environment 即可；生产建议改用 .env 注入敏感项。
+
+services:
+  postgres:
+    image: janus/postgres:14-alpine
+    container_name: janus-postgres
+    environment:
+      POSTGRES_DB: janus_admin
+      POSTGRES_USER: janus
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-janus@123}
+    # 数据库文件落在统一数据目录的 pgdata/ 下（与 janus 共用 JANUS_DATA_DIR，升级不丢库）
+    volumes:
+      - ${JANUS_DATA_DIR:-/opt/janus_workspace}/pgdata:/var/lib/postgresql/data
+    # 对外暴露到宿主机，使用非默认端口 25432（避免与宿主机已有 PG 的 5432 冲突）
+    # janus 为 host 网络模式，不在本 bridge 网络，无法用 docker DNS 解析服务名 postgres；
+    # 改经宿主机发布端口 127.0.0.1:25432 连库（见下方 janus 的 DB_HOST/DB_PORT）；此端口也供外部客户端/运维连库
+    ports:
+      - "25432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U janus -d janus_admin"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - janus-net
+    restart: unless-stopped
+
+  redis:
+    image: janus/redis:7-alpine
+    container_name: janus-redis
+    # 命令与 healthcheck 都用 compose 插值 ${REDIS_PASSWORD:-janus@123}（解析自宿主机环境变量，缺省 janus@123），
+    # 保证“启动密码”和“健康检查密码”是同一个值；不要用 $$（容器内无该环境变量，会判空导致 NOAUTH）
+    command: redis-server --requirepass "${REDIS_PASSWORD:-janus@123}" --appendonly yes
+    volumes:
+      - ${JANUS_DATA_DIR:-/opt/janus_workspace}/redisdata:/data
+    ports:
+      - "26379:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD:-janus@123}\" ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - janus-net
+    restart: unless-stopped
+
+  janus:
+    image: janus/janus:latest
+    container_name: janus
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # host 网络模式：8899 直接监听宿主机（等同于裸机运行）。
+    # 业务系统（host 模式）通过 127.0.0.1:8899 直连认证中心，零机器 IP、零网络互联；
+    # 反向回调业务系统（SLO 单点登出）也走 127.0.0.1:<业务端口>，同样直通。
+    network_mode: host
+    environment:
+      # 连库：postgres 为 bridge 模式发布在宿主机 25432，host 模式下 127.0.0.1 直连
+      DB_HOST: 127.0.0.1
+      DB_PORT: 25432
+      DB_USERNAME: janus
+      DB_PASSWORD: ${DB_PASSWORD:-janus@123}
+      DB_NAME: janus_admin
+      # Redis：redis 为 bridge 模式发布在宿主机 26379
+      SPRING_DATA_REDIS_HOST: 127.0.0.1
+      SPRING_DATA_REDIS_PORT: 26379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-janus@123}
+      SPRING_DATA_REDIS_DATABASE: 0
+      SPRING_PROFILES_ACTIVE: prod
+      JANUS_SSL_ENABLED: "true"
+      # 站点信息预置（预安装交付）：install.sh 把 --site-name 等参数写入包目录 .env，
+      # compose 插值注入；应用启动时自动完成首次初始化（仅首次安装生效，已安装自动跳过）
+      JANUS_SITE_PRESET_ENABLED: ${JANUS_SITE_PRESET_ENABLED:-false}
+      JANUS_SITE_PRESET_NAME: ${JANUS_SITE_PRESET_NAME:-}
+      JANUS_SITE_PRESET_DESC: ${JANUS_SITE_PRESET_DESC:-}
+      JANUS_SITE_PRESET_COPYRIGHT: ${JANUS_SITE_PRESET_COPYRIGHT:-}
+    volumes:
+      - ${JANUS_DATA_DIR:-/opt/janus_workspace}:/app/janus_workspace
+    restart: unless-stopped
+
+networks:
+  janus-net:
+    driver: bridge
